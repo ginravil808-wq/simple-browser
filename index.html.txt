@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Browser - Семестровая работа</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f0f2f5;
+        }
+
+        /* Панель вкладок */
+        .tab-bar {
+            background: #e9eef2;
+            padding: 8px 8px 0 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            overflow-x: auto;
+            border-bottom: 1px solid #b0b7c0;
+        }
+
+        .tab {
+            background: #dadfe5;
+            padding: 8px 16px;
+            border-radius: 8px 8px 0 0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 200px;
+            cursor: pointer;
+            border: 1px solid #b0b7c0;
+            border-bottom: none;
+        }
+
+        .tab.active {
+            background: white;
+            font-weight: 500;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+
+        .tab-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tab-close {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 14px;
+        }
+
+        .tab-close:hover {
+            background: #bfc6ce;
+        }
+
+        .new-tab-btn {
+            background: transparent;
+            border: 1px solid #8f9aa8;
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* Панель навигации */
+        .nav-bar {
+            background: white;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid #d0d7de;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1a2634;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: #eef2f6;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        #url-bar {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid #d0d7de;
+            border-radius: 30px;
+            font-size: 15px;
+            outline: none;
+            background: #f6f8fa;
+        }
+
+        #url-bar:focus {
+            border-color: #0969da;
+            background: white;
+        }
+
+        .go-btn {
+            background: #0969da;
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        /* Контейнер для страниц */
+        .view-container {
+            flex: 1;
+            background: white;
+            position: relative;
+        }
+
+        .page-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .welcome {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #5a6a7a;
+            background: #f8fafc;
+            padding: 24px;
+            border-radius: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="tab-bar" id="tabBar">
+        <button class="new-tab-btn" id="newTabBtn">+</button>
+    </div>
+
+    <div class="nav-bar">
+        <button class="nav-btn" id="backBtn" disabled>←</button>
+        <button class="nav-btn" id="forwardBtn" disabled>→</button>
+        <button class="nav-btn" id="reloadBtn">↻</button>
+        <input type="text" id="urlBar" placeholder="Введите URL или поисковый запрос">
+        <button class="go-btn" id="goBtn">Перейти</button>
+    </div>
+
+    <div class="view-container" id="viewContainer">
+        <div class="welcome" id="welcome">
+            <h3>🌐 Простой браузер</h3>
+            <p>Введите адрес сайта или слово для поиска через Bing</p>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * СЕМЕСТРОВАЯ РАБОТА ПО ТРПО
+         * Тема: Веб-браузер с использованием паттернов проектирования
+         * 
+         * Использованные паттерны:
+         * 1. MVC (Model-View-Controller) - основная архитектура
+         * 2. Фабричный метод - создание вкладок
+         * 3. Одиночка - единое состояние приложения
+         * 4. Заместитель (Proxy) - ленивая загрузка iframe
+         * 5. Наблюдатель - обновление UI при изменении состояния
+         * 6. Состояние - управление активной вкладкой
+         * 7. Команда - навигация (назад/вперёд)
+         */
+
+        (function() {
+            // ================ МОДЕЛЬ (Model) ================
+            // Хранит состояние приложения и бизнес-логику
+            
+            /**
+             * ПАТТЕРН Одиночка (Singleton)
+             * Гарантирует единственный экземпляр состояния браузера
+             */
+            const BrowserModel = {
+                // Состояние
+                tabs: [],           // Все вкладки
+                activeId: null,     // ID активной вкладки
+                
+                // Наблюдатели (паттерн Observer)
+                observers: [],
+                
+                // Добавить наблюдателя
+                addObserver(observer) {
+                    this.observers.push(observer);
+                },
+                
+                // Уведомить всех наблюдателей об изменениях
+                notifyObservers() {
+                    this.observers.forEach(observer => observer.update(this));
+                },
+                
+                /**
+                 * ПАТТЕРН Фабричный метод (Factory Method)
+                 * Создаёт новую вкладку
+                 */
+                createTab(url = 'about:blank') {
+                    const id = 'tab-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+                    
+                    const tab = {
+                        id: id,
+                        title: url === 'about:blank' ? 'Новая вкладка' : url,
+                        url: url,
+                        // ПАТТЕРН Заместитель (Proxy) - iframe создаётся только при активации
+                        proxy: null
+                    };
+                    
+                    this.tabs.push(tab);
+                    
+                    // Если это первая вкладка, делаем её активной
+                    if (this.tabs.length === 1) {
+                        this.activeId = id;
+                    }
+                    
+                    this.notifyObservers();
+                    return id;
+                },
+                
+                // Удалить вкладку
+                removeTab(id) {
+                    const index = this.tabs.findIndex(t => t.id === id);
+                    if (index === -1) return false;
+                    
+                    // Удаляем iframe, если он был создан
+                    if (this.tabs[index].proxy) {
+                        this.tabs[index].proxy.remove();
+                    }
+                    
+                    this.tabs.splice(index, 1);
+                    
+                    // Если удалили активную вкладку, переключаемся на другую
+                    if (this.activeId === id) {
+                        this.activeId = this.tabs.length > 0 ? this.tabs[this.tabs.length - 1].id : null;
+                    }
+                    
+                    this.notifyObservers();
+                    return true;
+                },
+                
+                // Активировать вкладку (ПАТТЕРН Состояние)
+                setActiveTab(id) {
+                    if (this.tabs.some(t => t.id === id) && this.activeId !== id) {
+                        this.activeId = id;
+                        this.notifyObservers();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                // Обновить URL вкладки
+                updateTabUrl(id, url) {
+                    const tab = this.tabs.find(t => t.id === id);
+                    if (tab) {
+                        tab.url = url;
+                        this.notifyObservers();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                // Обновить заголовок вкладки
+                updateTabTitle(id, title) {
+                    const tab = this.tabs.find(t => t.id === id);
+                    if (tab) {
+                        tab.title = title || tab.url;
+                        this.notifyObservers();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                // Получить активную вкладку
+                getActiveTab() {
+                    return this.tabs.find(t => t.id === this.activeId);
+                }
+            };
+
+            // ================ ПРЕДСТАВЛЕНИЕ (View) ================
+            // Отвечает за отображение UI
+            
+            class BrowserView {
+                constructor() {
+                    // DOM элементы
+                    this.tabBar = document.getElementById('tabBar');
+                    this.viewContainer = document.getElementById('viewContainer');
+                    this.welcome = document.getElementById('welcome');
+                    this.urlBar = document.getElementById('urlBar');
+                    this.backBtn = document.getElementById('backBtn');
+                    this.forwardBtn = document.getElementById('forwardBtn');
+                    this.reloadBtn = document.getElementById('reloadBtn');
+                    this.goBtn = document.getElementById('goBtn');
+                    this.newTabBtn = document.getElementById('newTabBtn');
+                    
+                    // Контроллер будет установлен позже
+                    this.controller = null;
+                }
+                
+                // Привязать контроллер
+                setController(controller) {
+                    this.controller = controller;
+                    this.setupEventListeners();
+                }
+                
+                // Настройка обработчиков событий
+                setupEventListeners() {
+                    this.newTabBtn.addEventListener('click', () => this.controller.onCreateTab());
+                    this.backBtn.addEventListener('click', () => this.controller.onBack());
+                    this.forwardBtn.addEventListener('click', () => this.controller.onForward());
+                    this.reloadBtn.addEventListener('click', () => this.controller.onReload());
+                    this.goBtn.addEventListener('click', () => this.controller.onNavigate(this.urlBar.value));
+                    
+                    this.urlBar.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            this.controller.onNavigate(this.urlBar.value);
+                        }
+                    });
+                }
+                
+                // Обновление представления (ПАТТЕРН Наблюдатель)
+                update(model) {
+                    this.renderTabs(model.tabs, model.activeId);
+                    this.renderAddressBar(model.getActiveTab());
+                    this.renderIframes(model);
+                    this.updateNavButtons(model);
+                }
+                
+                // Отрисовка вкладок
+                renderTabs(tabs, activeId) {
+                    // Удаляем все вкладки кроме кнопки "Новая"
+                    const existingTabs = Array.from(this.tabBar.children).filter(
+                        child => child.classList.contains('tab')
+                    );
+                    existingTabs.forEach(tab => tab.remove());
+                    
+                    // Создаём вкладки заново
+                    tabs.forEach(tab => {
+                        const tabEl = document.createElement('div');
+                        tabEl.className = `tab ${tab.id === activeId ? 'active' : ''}`;
+                        tabEl.dataset.id = tab.id;
+                        tabEl.innerHTML = `
+                            <span class="tab-title">${tab.title}</span>
+                            <span class="tab-close">✕</span>
+                        `;
+                        
+                        // Обработчик переключения вкладки
+                        tabEl.addEventListener('click', (e) => {
+                            if (e.target.classList.contains('tab-close')) return;
+                            this.controller.onSwitchTab(tab.id);
+                        });
+                        
+                        // Обработчик закрытия вкладки
+                        tabEl.querySelector('.tab-close').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.controller.onCloseTab(tab.id);
+                        });
+                        
+                        this.tabBar.insertBefore(tabEl, this.newTabBtn);
+                    });
+                }
+                
+                // Обновление адресной строки
+                renderAddressBar(activeTab) {
+                    if (activeTab) {
+                        this.urlBar.value = activeTab.url;
+                        this.welcome.style.display = 'none';
+                    } else {
+                        this.urlBar.value = '';
+                        this.welcome.style.display = 'flex';
+                    }
+                }
+                
+                // Обновление iframe (ПАТТЕРН Заместитель)
+                renderIframes(model) {
+                    // Скрываем все iframe
+                    document.querySelectorAll('.page-frame').forEach(frame => {
+                        frame.style.display = 'none';
+                    });
+                    
+                    // Если есть активная вкладка
+                    if (model.activeId) {
+                        const activeTab = model.getActiveTab();
+                        
+                        if (activeTab.proxy) {
+                            // Если iframe уже создан, показываем его
+                            activeTab.proxy.style.display = 'block';
+                        } else {
+                            // ПАТТЕРН Заместитель - создаём iframe только при активации
+                            const iframe = document.createElement('iframe');
+                            iframe.className = 'page-frame';
+                            iframe.dataset.id = activeTab.id;
+                            iframe.src = activeTab.url;
+                            iframe.style.display = 'block';
+                            
+                            // Сохраняем ссылку в модели
+                            activeTab.proxy = iframe;
+                            
+                            // Добавляем в контейнер
+                            this.viewContainer.appendChild(iframe);
+                            
+                            // Обновляем заголовок при загрузке
+                            iframe.addEventListener('load', () => {
+                                try {
+                                    const title = iframe.contentDocument.title;
+                                    if (title) {
+                                        this.controller.onTitleChange(activeTab.id, title);
+                                    }
+                                    // Обновляем URL в адресной строке (на случай редиректа)
+                                    const currentUrl = iframe.contentWindow.location.href;
+                                    if (currentUrl !== activeTab.url) {
+                                        this.controller.onUrlChange(activeTab.id, currentUrl);
+                                    }
+                                } catch (e) {
+                                    // Игнорируем ошибки доступа к cross-origin
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                // Обновление кнопок навигации
+                updateNavButtons(model) {
+                    const activeTab = model.getActiveTab();
+                    if (!activeTab || !activeTab.proxy) {
+                        this.backBtn.disabled = true;
+                        this.forwardBtn.disabled = true;
+                        return;
+                    }
+                    
+                    try {
+                        // Пытаемся определить возможность навигации
+                        const history = activeTab.proxy.contentWindow?.history;
+                        this.backBtn.disabled = !history?.length;
+                    } catch {
+                        this.backBtn.disabled = true;
+                        this.forwardBtn.disabled = true;
+                    }
+                }
+            }
+
+            // ================ КОНТРОЛЛЕР (Controller) ================
+            // Обрабатывает действия пользователя и обновляет модель
+            
+            class BrowserController {
+                constructor(model, view) {
+                    this.model = model;
+                    this.view = view;
+                    
+                    // Регистрируем view как наблюдателя
+                    this.model.addObserver(this.view);
+                }
+                
+                // ПАТТЕРН Команда - создание вкладки
+                onCreateTab(url) {
+                    this.model.createTab(url);
+                }
+                
+                // ПАТТЕРН Команда - закрытие вкладки
+                onCloseTab(id) {
+                    this.model.removeTab(id);
+                }
+                
+                // ПАТТЕРН Команда - переключение вкладки
+                onSwitchTab(id) {
+                    this.model.setActiveTab(id);
+                }
+                
+                // ПАТТЕРН Команда - навигация
+                onNavigate(input) {
+                    if (!input.trim()) return;
+                    
+                    const url = this.normalizeUrl(input);
+                    
+                    if (!this.model.activeId) {
+                        this.model.createTab(url);
+                        return;
+                    }
+                    
+                    const activeTab = this.model.getActiveTab();
+                    if (activeTab) {
+                        this.model.updateTabUrl(activeTab.id, url);
+                        
+                        if (activeTab.proxy) {
+                            activeTab.proxy.src = url;
+                        }
+                    }
+                }
+                
+                // ПАТТЕРН Команда - назад
+                onBack() {
+                    const activeTab = this.model.getActiveTab();
+                    try {
+                        activeTab?.proxy?.contentWindow?.history?.back();
+                    } catch {}
+                }
+                
+                // ПАТТЕРН Команда - вперёд
+                onForward() {
+                    const activeTab = this.model.getActiveTab();
+                    try {
+                        activeTab?.proxy?.contentWindow?.history?.forward();
+                    } catch {}
+                }
+                
+                // ПАТТЕРН Команда - обновить
+                onReload() {
+                    const activeTab = this.model.getActiveTab();
+                    try {
+                        activeTab?.proxy?.contentWindow?.location?.reload();
+                    } catch {}
+                }
+                
+                // Обновление заголовка
+                onTitleChange(id, title) {
+                    this.model.updateTabTitle(id, title);
+                }
+                
+                // Обновление URL
+                onUrlChange(id, url) {
+                    this.model.updateTabUrl(id, url);
+                }
+                
+                // Нормализация URL
+                normalizeUrl(input) {
+                    input = input.trim();
+                    if (!input) return 'about:blank';
+                    
+                    // Простая проверка: содержит точку и нет пробелов
+                    if (input.includes('.') && !input.includes(' ')) {
+                        return input.startsWith('http') ? input : `http://${input}`;
+                    }
+                    
+                    // Поиск через Bing (Google блокирует iframe)
+                    return `https://www.bing.com/search?q=${encodeURIComponent(input)}`;
+                }
+            }
+
+            // ================ ИНИЦИАЛИЗАЦИЯ ================
+            const model = BrowserModel; // ПАТТЕРН Одиночка
+            const view = new BrowserView();
+            const controller = new BrowserController(model, view);
+            
+            view.setController(controller);
+            
+            // Создаём начальную вкладку
+            window.addEventListener('load', () => {
+                controller.onCreateTab();
+            });
+        })();
+    </script>
+</body>
+</html>
